@@ -9,19 +9,35 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 import dgl
-from dgl.data.tree import SST, SSTBatch
+from dgl.data.tree import SST
 
 from tree_lstm import TreeLSTM
 
 SSTBatch = collections.namedtuple('SSTBatch', ['graph', 'mask', 'wordid', 'label'])
 def batcher(device):
-    def batcher_dev(batch):
-        batch_trees = dgl.batch(batch)
-        return SSTBatch(graph=batch_trees,
-                        mask=batch_trees.ndata['mask'].to(device),
-                        wordid=batch_trees.ndata['x'].to(device),
-                        label=batch_trees.ndata['y'].to(device))
+    if isinstance(device, list):
+        def batcher_dev(batch):
+            batch_trees = dgl.batch(batch)
+            return SSTBatch(graph=batch_trees,
+                            mask=batch_trees.ndata['mask'].to(device),
+                            wordid=batch_trees.ndata['x'].to(device),
+                            label=batch_trees.ndata['y'].to(device))
+    else:
+        ndev = len(device)
+        assert ndev > 1
+        def batcher_dev(batch):
+            bz_per_dev = len(batch) // ndev
+            batches = []
+            for idx, dev in enumerate(device):
+                batch_trees = dgl.batch(batch[(idx - 1) * bz_per_dev:
+                                              idx * bz_per_dev])
+                batches.append(SSTBatch(graph=batch_trees,
+                                        mask=batch_trees.ndata['mask'].to(dev),
+                                        wordid=batch_trees.ndata['x'].to(dev),
+                                        label=batch_trees.ndata['y'].to(dev)))
+                return batches
     return batcher_dev
+
 
 def main(args):
     np.random.seed(args.seed)
