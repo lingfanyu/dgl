@@ -15,7 +15,8 @@ from tree_lstm import TreeLSTM
 
 SSTBatch = collections.namedtuple('SSTBatch', ['graph', 'mask', 'wordid', 'label'])
 def batcher(device):
-    if isinstance(device, list):
+    assert(isinstance(device, list))
+    if len(device) == 1:
         def batcher_dev(batch):
             batch_trees = dgl.batch(batch)
             return SSTBatch(graph=batch_trees,
@@ -24,7 +25,6 @@ def batcher(device):
                             label=batch_trees.ndata['y'].to(device))
     else:
         ndev = len(device)
-        assert ndev > 1
         def batcher_dev(batch):
             bz_per_dev = len(batch) // ndev
             batches = []
@@ -47,10 +47,14 @@ def main(args):
     best_epoch = -1
     best_dev_acc = 0
 
-    cuda = args.gpu >= 0
-    device = th.device('cuda:{}'.format(args.gpu)) if cuda else th.device('cpu')
-    if cuda:
-        th.cuda.set_device(args.gpu)
+    args.gpus = map(int, args.gpus.split(','))
+    if len(args.gpus) == 1 and args.gpus[0] < 0:
+        device = [th.device('cpu')]
+        cuda = False
+    else:
+        device = [th.device('cuda:{}'.format(gpu)) for gpu in args.gpus]
+        th.cuda.set_device(device[0])
+        cuda = True
 
     trainset = SST()
     train_loader = DataLoader(dataset=trainset,
@@ -84,6 +88,9 @@ def main(args):
         if p.dim() > 1:
             INIT.xavier_uniform_(p)
 
+    if len(device) > 1:
+        model = nn.parallel.replicate(model, device)
+
     optimizer = optim.Adagrad([
         {'params':params_ex_emb, 'lr':args.lr, 'weight_decay':args.weight_decay},
         {'params':params_emb, 'lr':0.1*args.lr}])
@@ -93,20 +100,35 @@ def main(args):
         t_epoch = time.time()
         model.train()
         for step, batch in enumerate(train_loader):
-            g = batch.graph
-            n = g.number_of_nodes()
-            h = th.zeros((n, args.h_size)).to(device)
-            c = th.zeros((n, args.h_size)).to(device)
+            if len(device) > 0:
+                gs = [b.graph for b in batch]
+                ns = [g.number_of_nodes() for g in gs]
+                hs, cs = zip(*[(th.zeros((n, args.h_size)).to(dev),
+                                th.zeros((n, args.h_size)).to(dev))
+                                for n, dev in zip(ns, device)])
+            else:
+                g = batch.graph
+                n = g.number_of_nodes()
+                h = th.zeros((n, args.h_size)).to(device[0])
+                c = th.zeros((n, args.h_size)).to(device[0])
             if step >= 3:
                 t0 = time.time() # tik
 
-            logits = model(batch, h, c)
+            if len(device) > 0:
+                output = nn.parallel.parallel_apply(model, gs, hs, cs)
+            else:
+                logits = model(batch, h, c)
+            if cuda:
+                torch.cuda.synchronize()
+            """
             logp = F.log_softmax(logits, 1)
             loss = F.nll_loss(logp, batch.label, reduction='sum')
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            """
+            continue
 
             if step >= 3:
                 dur.append(time.time() - t0) # tok
@@ -186,7 +208,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', type=int, default=-1)
+    parser.add_argument('--gpus', type=str, default="-1")
     parser.add_argument('--seed', type=int, default=41)
     parser.add_argument('--batch-size', type=int, default=25)
     parser.add_argument('--child-sum', action='store_true')
