@@ -63,8 +63,6 @@ class Decoder(nn.Module):
             return {'x': x if i < self.N - 1 else self.norm(x)}
         return func
 
-lock = threading.Lock()
-
 class Transformer(nn.Module):
     def __init__(self, encoder, decoder, src_embed, tgt_embed, pos_enc, generator, h, d_k):
         super(Transformer, self).__init__()
@@ -129,9 +127,8 @@ class Transformer(nn.Module):
 
         # visualize attention
         """
-        with lock:
-            if self.att_weight_map is None:
-                self._register_att_map(g, graph.nid_arr['enc'][VIZ_IDX], graph.nid_arr['dec'][VIZ_IDX])
+        if self.att_weight_map is None:
+            self._register_att_map(g, graph.nid_arr['enc'][VIZ_IDX], graph.nid_arr['dec'][VIZ_IDX])
         """
         return self.generator(g.ndata['x'][nids['dec']])
 

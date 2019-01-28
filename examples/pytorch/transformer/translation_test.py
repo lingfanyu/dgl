@@ -6,7 +6,7 @@ from tqdm import tqdm
 import numpy as n
 import argparse
 
-k = 12 # Beam size
+k = 5 # Beam size
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser('testing translation model')
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         print(line.strip(), file=fref)
     for i, g in enumerate(test_iter):
         with th.no_grad():
-            output = model.infer(g, dataset.MAX_LENGTH, dataset.eos_id, k, alpha=0.6)
+            output = model.infer(g, dataset.MAX_LENGTH, dataset.eos_id, k, alpha=1.0)
         for line in dataset.get_sequence(output):
             if args.print:
                 print(line)

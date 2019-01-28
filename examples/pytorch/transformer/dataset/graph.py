@@ -12,111 +12,47 @@ from collections import *
 Graph = namedtuple('Graph',
                    ['g', 'src', 'tgt', 'tgt_y', 'nids', 'eids', 'mat', 'nid_arr', 'n_nodes', 'n_edges', 'n_tokens'])
 
-class GraphPool:
-    "Create a graph pool in advance to accelerate graph building phase in Transformer."
-    def __init__(self, n=100, m=100, sparse=False):
-        '''
-        args:
-            n: maximum length of input sequence.
-            m: maximum length of output sequence.
-        '''
-        print('start creating graph pool...')
-        tic = time.time()
-        self.n, self.m = n, m
-        g_pool = [[dgl.DGLGraph() for _ in range(m)] for _ in range(n)]
-        num_edges = {
-            'ee': np.zeros((n, m)).astype(int),
-            'ed': np.zeros((n, m)).astype(int),
-            'dd': np.zeros((n, m)).astype(int)
-        }
-        us_pool = {k: [[None for _ in range(m)] for _ in range(n)] for k in ['ee', 'ed', 'dd']}
-        vs_pool = {k: [[None for _ in range(m)] for _ in range(n)] for k in ['ee', 'ed', 'dd']}
-        for i, j in itertools.product(range(n), range(m)):
-            src_length = i + 1
-            tgt_length = j + 1
+relative = {
+    'sparse': (np.array([-64, -32, -16, -8, -4, -2, -1, 0, 1, 2, 4, 8, 16, 32, 64]), np.array([0, 1, 2, 4, 8, 16, 32, 64])),
+    'neigh': (np.array(list(range(-9, 10))), np.array(list(range(0, 10))))
+}
 
-            g_pool[i][j].add_nodes(src_length + tgt_length)
-            enc_nodes = th.arange(src_length, dtype=th.long)
-            dec_nodes = th.arange(tgt_length, dtype=th.long) + src_length
+def create_adj_mat(shift_row, shift_col, n_row, n_col, mode='fully', triu=False):
+    if mode == 'fully':
+        us = np.arange(shift_row, shift_row + n_row)
+        vs = np.arange(shift_col, shift_col + n_col)
+        rows = np.repeat(us, n_col)
+        cols = np.tile(vs, n_row) 
+        if triu:
+            assert shift_row == shift_col
+            assert n_row == n_col
+            cond = rows <= cols 
+            return np.extract(cond, rows), np.extract(cond, cols) 
+        return rows, cols
+    elif mode == 'sparse' or mode == 'neigh':
+        us = np.arange(shift_row, shift_row + n_row)
+        vs = relative[mode][triu] + shift_col
+        rows = np.repeat(us, len(vs))
+        cols = (np.tile(vs, n_row).reshape(n_row, -1) + np.arange(n_row).reshape(-1, 1)).reshape(-1)
+        cond = (cols >= shift_col) & (cols < shift_col + n_col)
+        return np.extract(cond, rows), np.extract(cond, cols)
+    else:
+        raise NotImplementedError
 
-            if sparse:
-                # enc -> enc
-                us, vs = [], []
-                for u in enc_nodes.tolist():
-                    for dv in [-64, -32, -16, -8, -4, -2, -1, 0, 1, 2, 4, 8, 16, 32, 64]:
-                        v = u + dv
-                        if v < 0 or v >= src_length: continue
-                        g_pool[i][j].add_edge(u, v)
-                        us.append(u)
-                        vs.append(v)
-                        num_edges['ee'][i][j] += 1
-                us_pool['ee'][i][j] = th.LongTensor(us)
-                vs_pool['ee'][i][j] = th.LongTensor(vs)
+class EncGraph:
+    def __init__(self, mode='fully'):
+        pass
 
-                
-                # enc -> dec
-                us = enc_nodes.unsqueeze(-1).repeat(1, tgt_length).view(-1)
-                vs = dec_nodes.repeat(src_length)
-                g_pool[i][j].add_edges(us, vs)
-                num_edges['ed'][i][j] = len(us)
-                us_pool['ed'][i][j] = us
-                vs_pool['ed'][i][j] = vs
-
-                # dec -> dec
-                """
-                indices = th.triu(th.ones(tgt_length, tgt_length)) == 1
-                us = dec_nodes.unsqueeze(-1).repeat(1, tgt_length)[indices]
-                vs = dec_nodes.unsqueeze(0).repeat(tgt_length, 1)[indices]
-                g_pool[i][j].add_edges(us, vs)
-                num_edges['dd'][i][j] = len(us)
-                us_pool['dd'][i][j] = us
-                vs_pool['dd'][i][j] = vs
-                """
-                us, vs = [], []
-                for u in dec_nodes.tolist():
-                    for dv in [0, 1, 2, 4, 8, 16, 32, 64]:
-                        v = u + dv
-                        if v < src_length or v >= src_length + tgt_length: continue
-                        g_pool[i][j].add_edge(u, v)
-                        us.append(u)
-                        vs.append(v)
-                        num_edges['dd'][i][j] += 1
-                us_pool['dd'][i][j] = th.LongTensor(us)
-                vs_pool['dd'][i][j] = th.LongTensor(vs)
-
-            else:
-                # enc -> enc
-                us = enc_nodes.unsqueeze(-1).repeat(1, src_length).view(-1)
-                vs = enc_nodes.repeat(src_length)
-                g_pool[i][j].add_edges(us, vs)
-                num_edges['ee'][i][j] = len(us)
-                us_pool['ee'][i][j] = us
-                vs_pool['ee'][i][j] = vs
-                # enc -> dec
-                us = enc_nodes.unsqueeze(-1).repeat(1, tgt_length).view(-1)
-                vs = dec_nodes.repeat(src_length)
-                g_pool[i][j].add_edges(us, vs)
-                num_edges['ed'][i][j] = len(us)
-                us_pool['ed'][i][j] = us
-                vs_pool['ed'][i][j] = vs
-                # dec -> dec
-                indices = th.triu(th.ones(tgt_length, tgt_length)) == 1
-                us = dec_nodes.unsqueeze(-1).repeat(1, tgt_length)[indices]
-                vs = dec_nodes.unsqueeze(0).repeat(tgt_length, 1)[indices]
-                g_pool[i][j].add_edges(us, vs)
-                num_edges['dd'][i][j] = len(us)
-                us_pool['dd'][i][j] = us
-                vs_pool['dd'][i][j] = vs
-
-        print('successfully created graph pool, time: {0:0.3f}s'.format(time.time() - tic))
-        self.g_pool = g_pool
-        self.vs_pool = vs_pool
-        self.us_pool = us_pool
-        self.num_edges = num_edges
+class EncDecGraph:
+    def __init__(self, mode='fully'):
+        """
+        mode: fully/sparse/neigh
+        """
+        self.mode = mode
 
     def beam(self, src_buf, start_sym, max_len, k, device='cpu'):
         '''
-        Return a batched graph for beam search during inference of Transformer.
+        Return a Graph class for beam search during inference of Transformer.
         args:
             src_buf: a list of input sequence
             start_sym: the index of start-of-sequence symbol

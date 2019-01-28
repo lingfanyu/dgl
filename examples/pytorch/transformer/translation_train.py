@@ -67,9 +67,9 @@ def main(dev_id, args):
     # Move model to correponding device 
     model, criterion = model.to(device), criterion.to(device)
     # Optimizer 
-    model_opt = NoamOpt(dim_model, 1, 8000,
+    model_opt = NoamOpt(dim_model, 2, 4000,
                         T.optim.Adam(model.parameters(), lr=1e-3,
-                                     betas=(0.9, 0.998), eps=1e-9))
+                                     betas=(0.9, 0.98), eps=1e-9))
     # Loss function 
     if args.ngpu > 1:
         dev_rank = dev_id # current device id

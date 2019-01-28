@@ -6,8 +6,63 @@ import random
 
 class ClassificationDataset(object):
     "Dataset class for classification task."
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, path, exts, train='train', valid='valid', test='test', vocab='vocab.txt'):
+        vocab_path = os.path.join(path, vocab)
+        self.text = {}
+        self.label = {}
+        with open(os.path.join(path, train + '.' + exts[0]), 'r', encoding='utf-8') as f:
+            self.text['train'] = f.readlines() 
+        with open(os.path.join(path, train + '.' + exts[1]), 'r', encoding='utf-8') as f:
+            self.label['train'] = f.readlines()
+        with open(os.path.join(path, valid + '.' + exts[0]), 'r', encoding='utf-8') as f:
+            self.text['valid'] = f.readlines()
+        with open(os.path.join(path, valid + '.' + exts[1]), 'r', encoding='utf-8') as f:
+            self.label['valid'] = f.readlines()
+        with open(os.path.join(path, test + '.' + exts[0]), 'r', encoding='utf-8') as f:
+            self.text['test'] = f.readlines()
+        with open(os.path.join(path, test + '.' + exts[1]), 'r', encoding='utf-8') as f:
+            self.label['test'] = f.readlines()
+        vocab = Vocab() 
+        vocab.load(vocab_path)
+        self.vocab = vocab
+        self.src_field = Field(vocab) 
+
+    @property
+    def vocab_size(self):
+        return len(self.vocab)
+
+    def __call__(self, mode='train', batch_size=32, device='cpu'):
+        text, label = self.text[mode], self.label[mode]        
+        n = len(text)
+
+        order = list(range(n))
+        if mode == 'train':
+            random.shuffle(order)
+
+        text_buf, label_buf = [], [] 
+        cnt = 0
+        for idx in order:
+            text_i = self.src_field(
+                text[idx].strip().split())
+            label_i = self.vocab[label[idx].strip()]
+            text_buf.append(text_i)
+            label_buf.append(label_i)
+            cnt += len(text_i)
+            if cnt >= batch_size:
+#                if mode == 'test':
+#                    yield graph_pool.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
+#                else:
+#                    yield graph_pool(src_buf, tgt_buf, device=device)
+                yield text_buf, label_buf
+                text_buf, label_buf = [], []
+                cnt = 0
+
+        if len(text_buf) != 0:
+#            if mode == 'test':
+#                yield graph_pool.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
+#            else:
+#                yield graph_pool(src_buf, tgt_buf, device=device)
+            yield text_buf, label_buf
 
 class TranslationDataset(object):
     '''
@@ -178,5 +233,12 @@ def get_dataset(dataset):
             valid='newstest2013.tok.bpe.32000',
             test='newstest2014.tok.bpe.32000',
             vocab='vocab.bpe.32000')
+    elif dataset == 'long':
+        return ClassificationDataset(
+            'data/long',
+            ('in', 'out'),
+            train='train',
+            valid='val',
+            test='test')
     else:
         raise KeyError()
