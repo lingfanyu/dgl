@@ -31,7 +31,7 @@ class ClassificationDataset(object):
     def vocab_size(self):
         return len(self.vocab)
 
-    def __call__(self, mode='train', batch_size=32, device='cpu'):
+    def __call__(self, template, mode='train', batch_size=32, device='cpu'):
         text, label = self.text[mode], self.label[mode]        
         n = len(text)
 
@@ -49,20 +49,12 @@ class ClassificationDataset(object):
             label_buf.append(label_i)
             cnt += len(text_i)
             if cnt >= batch_size:
-#                if mode == 'test':
-#                    yield graph_pool.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
-#                else:
-#                    yield graph_pool(src_buf, tgt_buf, device=device)
-                yield text_buf, label_buf
-                text_buf, label_buf = [], []
+                yield template(text_buf, label_buf, device=device)
+                text_buf, label_buf = [], [] 
                 cnt = 0
 
         if len(text_buf) != 0:
-#            if mode == 'test':
-#                yield graph_pool.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
-#            else:
-#                yield graph_pool(src_buf, tgt_buf, device=device)
-            yield text_buf, label_buf
+            yield template(text_buf, label_buf, device=device)
 
 class TranslationDataset(object):
     '''
@@ -145,7 +137,7 @@ class TranslationDataset(object):
     def eos_id(self):
         return self.vocab[self.EOS_TOKEN]
 
-    def __call__(self, graph_pool, mode='train', batch_size=32, k=1,
+    def __call__(self, template, mode='train', batch_size=32, k=1,
                  device='cpu', dev_rank=0, ndev=1):
         '''
         Create a batched graph correspond to the mini-batch of the dataset.
@@ -179,17 +171,17 @@ class TranslationDataset(object):
             cnt += len(src_sample)
             if cnt >= batch_size:
                 if mode == 'test':
-                    yield graph_pool.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
+                    yield template.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
                 else:
-                    yield graph_pool(src_buf, tgt_buf, device=device)
+                    yield template(src_buf, tgt_buf, device=device)
                 src_buf, tgt_buf = [], []
                 cnt = 0
 
         if len(src_buf) != 0:
             if mode == 'test':
-                yield graph_pool.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
+                yield template.beam(src_buf, self.sos_id, self.MAX_LENGTH, k, device=device)
             else:
-                yield graph_pool(src_buf, tgt_buf, device=device)
+                yield template(src_buf, tgt_buf, device=device)
 
     def get_sequence(self, batch):
         "return a list of sequence from a list of index arrays"
@@ -233,9 +225,9 @@ def get_dataset(dataset):
             valid='newstest2013.tok.bpe.32000',
             test='newstest2014.tok.bpe.32000',
             vocab='vocab.bpe.32000')
-    elif dataset == 'long':
+    elif dataset == 'long' or dataset == 'short':
         return ClassificationDataset(
-            'data/long',
+            'data/' + dataset,
             ('in', 'out'),
             train='train',
             valid='val',

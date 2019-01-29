@@ -56,8 +56,8 @@ def main(dev_id, args):
     V = dataset.vocab_size
     criterion = LabelSmoothing(V, padding_idx=dataset.pad_id, smoothing=0.1)
     dim_model = 512
-    # Build graph pool
-    graph_pool = GraphPool(n=100, m=100, sparse=args.sparse)
+    # Build graph template 
+    template = EncDecGraph(mode=args.mode)
     # Create model
     model = make_model(V, V, N=args.N, dim_model=dim_model,
                        universal=args.universal)
@@ -84,9 +84,9 @@ def main(dev_id, args):
     # Train & evaluate
     for epoch in range(100):
         start = time.time()
-        train_iter = dataset(graph_pool, mode='train', batch_size=args.batch,
+        train_iter = dataset(template, mode='train', batch_size=args.batch,
                              device=device, dev_rank=dev_rank, ndev=ndev)
-        valid_iter = dataset(graph_pool, mode='valid', batch_size=args.batch,
+        valid_iter = dataset(template, mode='valid', batch_size=args.batch,
                              device=device, dev_rank=dev_rank, ndev=ndev)
         model.train(True)
         run_epoch(epoch, train_iter, dev_rank, ndev, model,
@@ -95,10 +95,10 @@ def main(dev_id, args):
         if dev_rank == 0:
             model.att_weight_map = None
             model.eval()
+            end = time.time()
             run_epoch(epoch, valid_iter, dev_rank, 1, model,
                       loss_compute(opt=None), is_train=False)
-            end = time.time()
-            time.sleep(1)
+
             print("epoch time: {}".format(end - start))
 
             """
@@ -128,7 +128,7 @@ if __name__ == '__main__':
                            help='visualize attention')
     argparser.add_argument('--universal', action='store_true',
                            help='use universal transformer')
-    argparser.add_argument('--sparse', action='store_true')
+    argparser.add_argument('--mode', default='fully', type=str, help='graph mode: sparse/fully/neigh')
     argparser.add_argument('--master-ip', type=str, default='127.0.0.1',
                            help='master ip address')
     argparser.add_argument('--master-port', type=str, default='12345',

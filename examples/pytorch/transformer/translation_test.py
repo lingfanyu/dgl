@@ -15,7 +15,7 @@ if __name__ == '__main__':
     argparser.add_argument('--dataset', default='multi30k', help='dataset')
     argparser.add_argument('--batch', default=4096, help='batch size')
     argparser.add_argument('--universal', action='store_true', help='use universal transformer') 
-    argparser.add_argument('--sparse', action='store_true', help='sparse')
+    argparser.add_argument('--mode', default='fully', help='Graph mode: fully/sparse/neigh')
     argparser.add_argument('--checkpoint', type=int, help='checkpoint')
     argparser.add_argument('--print', action='store_true', help='whether to print translated text')
     args = argparser.parse_args()
@@ -30,13 +30,13 @@ if __name__ == '__main__':
     fpred = open('pred.txt', 'w')
     fref = open('ref.txt', 'w')
 
-    graph_pool = GraphPool()
+    template = EncDecGraph(mode=args.mode)
     model = make_model(V, V, N=args.N, dim_model=dim_model)
     with open('checkpoints/{}.pkl'.format(exp_setting), 'rb') as f:
         model.load_state_dict(th.load(f, map_location=lambda storage, loc: storage))
     model = model.to(device)
     model.eval()
-    test_iter = dataset(graph_pool, mode='test', batch_size=args.batch, device=device, k=k)
+    test_iter = dataset(template, mode='test', batch_size=args.batch, device=device, k=k)
     for line in dataset.tgt['test']:
         print(line.strip(), file=fref)
     for i, g in enumerate(test_iter):
