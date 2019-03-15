@@ -5,6 +5,8 @@ from distutils.version import LooseVersion
 import torch as th
 from torch.utils import dlpack
 
+from .graph_kernel import VectorSPMM
+
 TH_VERSION = LooseVersion(th.__version__)
 
 def data_type_dict():
@@ -146,6 +148,8 @@ def spmm(x, y):
     #       performance in backward
     feature = th.index_select(y, 0, src) * x._values().unsqueeze(-1)
     return out.scatter_add(0, index, feature)
+
+spmm_data = VectorSPMM.apply
 
 def unsorted_1d_segment_sum(input, seg_id, n_segs, dim):
     y = th.zeros(n_segs, *input.shape[1:]).to(input)

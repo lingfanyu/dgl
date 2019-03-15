@@ -595,6 +595,16 @@ class GraphIndex(object):
         else:
             raise Exception("unknown format")
 
+    @utils.cached_member(cache='_cache', prefix='adj_csr')
+    def adjacency_matrix_csr(self, transpose, ctx):
+        if not isinstance(transpose, bool):
+            raise DGLError('Expect bool value for "transpose" arg,'
+                           ' but got %s.' % (type(transpose)))
+        rst = _CAPI_DGLGraphGetAdj(self._handle, transpose, "csr")
+        indptr = F.copy_to(utils.toindex(rst(0)).tousertensor(), ctx)
+        indices = F.copy_to(utils.toindex(rst(1)).tousertensor(), ctx)
+        eid = F.copy_to(utils.toindex(rst(2)).tousertensor(), ctx)
+        return (indptr, indices, eid)
 
     @utils.cached_member(cache='_cache', prefix='adj')
     def adjacency_matrix(self, transpose, ctx):

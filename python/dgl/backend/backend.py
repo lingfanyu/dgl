@@ -392,7 +392,7 @@ def gather_row(data, row_index):
 
 def narrow_row(x, start, stop):
     """Narrow down the tensor along the first dimension.
-    
+
     Parameters
     ----------
     x : Tensor
@@ -570,6 +570,9 @@ def spmm(x, y):
     Tensor
         The result dense matrix.
     """
+    pass
+
+def spmm_data(indptr, eid, indices, indptr_t, eid_t, indices_t, edata, x):
     pass
 
 def unsorted_1d_segment_sum(input, seg_id, n_segs, dim):

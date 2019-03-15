@@ -786,7 +786,8 @@ def _gen_send_reduce(
         # analyze v2v spmv
         spmv_pairs, mfunc, rfunc = spmv.analyze_v2v_spmv(graph, mfunc, rfunc)
         adj = adj_creator()
-        spmv.gen_v2v_spmv_schedule(adj, spmv_pairs, var_src_nf, var_ef, var_eid, var_out)
+        spmv.gen_v2v_spmv_schedule(adj, spmv_pairs, var_src_nf, var_ef,
+                                   var_eid, var_out, graph)
 
         if len(mfunc) == 0:
             # All mfunc and rfunc have been converted to v2v spmv.

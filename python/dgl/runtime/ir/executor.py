@@ -510,6 +510,7 @@ class SPMVWithDataExecutor(Executor):
     spA : var.Var
         Variable for sparse matrix lambda. The lambda returns the sparse matrix
         given a context object.
+    spAt: var.Var
     A_data : var.Var
         Variable for the sparse matrix data.
     B : var.Var
@@ -517,8 +518,9 @@ class SPMVWithDataExecutor(Executor):
     ret : var.Var
         Variable for the result.
     """
-    def __init__(self, spA, A_data, B, ret):
+    def __init__(self, spA, spAt, A_data, B, ret):
         self.spA = spA
+        self.spAt = spAt
         self.A_data = A_data
         self.B = B
         self.ret = ret
@@ -533,46 +535,43 @@ class SPMVWithDataExecutor(Executor):
         return self.ret
 
     def run(self):
-        spA_ctx_fn = self.spA.data
-        A_data = self.A_data.data
-        if F.ndim(A_data) > 1:
-            # A_data is of shape (E, 1). Squeeze the last dim.
-            A_data = F.squeeze(A_data, 1)
+        A_data = self.A_data.data.squeeze()
         B = self.B.data
 
         ctx = F.context(B)
+        spA_ctx_fn = self.spA.data
         spA = spA_ctx_fn(ctx)
-        spidx = F.sparse_matrix_indices(spA)
-        shape = F.shape(spA)
-        # shuffle index is not used
-        spA, _ = F.sparse_matrix(A_data, spidx, shape)
+        spAt_ctx_fn = self.spAt.data
+        spAt = spAt_ctx_fn(ctx)
 
-        if F.ndim(B) == 1:
-            # B is a vector, append a (1,) dim at the end
-            B = F.unsqueeze(B, 1)
-            C = F.spmm(spA, B)
-            C = F.squeeze(C, 1)
-        elif F.ndim(B) > 2:
-            # Flatten the dim 1:~
+        indptr, indices, eid = spA
+        indptr_t, indices_t, eid_t = spAt
+
+        ndim_A = F.ndim(A_data)
+        ndim_B = F.ndim(B)
+        if ndim_A == 1 and ndim_B > 2:
             B_shape = F.shape(B)
             feat_shape = B_shape[1:]
             tmp_B_shape = (B_shape[0], functools.reduce(operator.mul, feat_shape, 1))
             B = F.reshape(B, tmp_B_shape)
-            C = F.spmm(spA, B)
+            C = F.spmm_data(indptr, eid, indices, indptr_t, eid_t, indices_t,
+                            A_data, B)
             C_shape = (F.shape(C)[0],) + feat_shape
             C = F.reshape(C, C_shape)
         else:
-            C = F.spmm(spA, B)
+            assert(ndim_B == ndim_A + 1)
+            C = F.spmm_data(indptr, eid, indices, indptr_t, eid_t, indices_t,
+                            A_data, B)
         self.ret.data = C
 
 IR_REGISTRY[OpCode.SPMV_WITH_DATA] = {
     'name' : 'SPMV_WITH_DATA',
-    'args_type' : [VarType.SPMAT, VarType.FEAT, VarType.FEAT],
+    'args_type' : [VarType.SPMAT, VarType.SPMAT, VarType.FEAT, VarType.FEAT],
     'ret_type' : VarType.FEAT,
     'executor_cls' : SPMVWithDataExecutor,
 }
 
-def SPMV_WITH_DATA(spA, A_data, B, ret=None):
+def SPMV_WITH_DATA(spA, spAt, A_data, B, ret=None):
     """Perform sparse-matrix-dense-matrix multiply with sparse data symbolically.
 
     Parameters
@@ -594,7 +593,7 @@ def SPMV_WITH_DATA(spA, A_data, B, ret=None):
     """
     reg = IR_REGISTRY[OpCode.SPMV_WITH_DATA]
     ret = var.new(reg['ret_type']) if ret is None else ret
-    get_current_prog().issue(reg['executor_cls'](spA, A_data, B, ret))
+    get_current_prog().issue(reg['executor_cls'](spA, spAt, A_data, B, ret))
     return ret
 
 class MergeRowExecutor(Executor):
