@@ -48,6 +48,7 @@ def gen_degree_bucketing_schedule(
     var_out : var.FEAT_DICT
         The variable for output feature dicts.
     """
+    raise RuntimeError
     buckets = _degree_bucketing_schedule(message_ids, dst_nodes, recv_nodes)
     # generate schedule
     _, degs, buckets, msg_ids, zero_deg_nodes = buckets

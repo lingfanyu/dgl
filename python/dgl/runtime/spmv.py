@@ -134,7 +134,13 @@ def gen_e2v_spmv_schedule(inc, spmv_rfunc, mfr, out):
     inc_var = var.SPMAT(incmat)
     for rfn in spmv_rfunc:
         ftmsg = ir.READ_COL(mfr, var.STR(rfn.msg_field))
-        ftdst = ir.SPMV(inc_var, ftmsg)
+        if rfn.name == "sum":
+            ftdst = ir.SPMV(inc_var, ftmsg)
+        elif rfn.name == "max":
+            ftdst = ir.SPMV_MAX(inc_var, ftmsg)
+        else:
+            raise RuntimeError
+
         ir.WRITE_COL_(out, var.STR(rfn.out_field), ftdst)
 
 def build_block_adj_matrix_graph(graph, block_id):

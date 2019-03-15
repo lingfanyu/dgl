@@ -95,7 +95,7 @@ def main(args):
     dur = []
     for epoch in range(args.epochs):
         model.train()
-        if epoch >= 3:
+        if epoch >= 0:
             t0 = time.time()
         # forward
         logits = model(features)
@@ -105,7 +105,7 @@ def main(args):
         loss.backward()
         optimizer.step()
 
-        if epoch >= 3:
+        if epoch >= 0:
             dur.append(time.time() - t0)
 
         train_acc = accuracy(logits[train_mask], labels[train_mask])
@@ -117,7 +117,7 @@ def main(args):
 
         print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | TrainAcc {:.4f} |"
               " ValAcc {:.4f} | ETputs(KTEPS) {:.2f}".
-              format(epoch, np.mean(dur), loss.item(), train_acc,
+              format(epoch, dur[-1], loss.item(), train_acc,
                      val_acc, n_edges / np.mean(dur) / 1000))
 
     print()

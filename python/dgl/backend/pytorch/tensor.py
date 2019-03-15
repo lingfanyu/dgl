@@ -6,6 +6,7 @@ import torch as th
 from torch.utils import dlpack
 
 from .graph_kernel import VectorSPMM
+from torch_scatter import scatter_max
 
 TH_VERSION = LooseVersion(th.__version__)
 
@@ -148,6 +149,17 @@ def spmm(x, y):
     #       performance in backward
     feature = th.index_select(y, 0, src) * x._values().unsqueeze(-1)
     return out.scatter_add(0, index, feature)
+
+def spmm_max(x, y):
+    dst, src = x._indices()
+    # src must be (0, n-1)
+    #assert(th.allclose(src, th.arange(len(src), device=src.device, dtype=src.dtype)))
+    index = dst.view(-1, 1).expand(-1, y.shape[1])
+    fill_value = -1e38
+    out = y.new_full((x.shape[0], y.shape[1]), fill_value)
+    out = scatter_max(y, index, dim=0, out=out)[0]
+    out[out == fill_value] = 0
+    return out
 
 spmm_data = VectorSPMM.apply
 

@@ -20,6 +20,7 @@ __all__ = [
     'NodeUDFExecutor', 'NODE_UDF',
     'EdgeUDFExecutor', 'EDGE_UDF',
     'SPMVExecutor', 'SPMV',
+    'SPMV_MAX_Executor', 'SPMV_MAX',
     'SPMVWithDataExecutor', 'SPMV_WITH_DATA',
     'ReadExecutor', 'READ',
     'ReadColExecutor', 'READ_COL',
@@ -49,6 +50,7 @@ class OpCode(object):
     MERGE_ROW = 7
     UPDATE_DICT = 8
     NEW_DICT = 9
+    SPMV_MAX = 10
     # mutable op (no return)
     # remember the name is suffixed with "_"
     WRITE_ = 21
@@ -420,6 +422,86 @@ def READ_ROW(fd, row, ret=None):
     reg = IR_REGISTRY[OpCode.READ_ROW]
     ret = var.new(reg['ret_type']) if ret is None else ret
     get_current_prog().issue(reg['executor_cls'](fd, row, ret))
+    return ret
+
+class SPMV_MAX_Executor(Executor):
+    """Executor for sparse-matrix-dense-matrix multiply and reducer max.
+
+    Parameters
+    ----------
+    spA : var.Var
+        Variable for sparse matrix lambda. The lambda returns the sparse matrix
+        given a context object.
+    B : var.Var
+        Variable for the dense feature tensor.
+    ret : var.Var
+        Variable for the result.
+    """
+    def __init__(self, spA, B, ret):
+        self.spA = spA
+        self.B = B
+        self.ret = ret
+
+    def opcode(self):
+        return OpCode.SPMV_MAX
+
+    def arg_vars(self):
+        return [self.spA, self.B]
+
+    def ret_var(self):
+        return self.ret
+
+    def run(self):
+        spA_ctx_fn = self.spA.data
+        B = self.B.data
+        ctx = F.context(B)
+        spA = spA_ctx_fn(ctx)
+        if F.ndim(B) == 1:
+            # B is a vector, append a (1,) dim at the end
+            B = F.unsqueeze(B, 1)
+            C = F.spmm_max(spA, B)
+            C = F.squeeze(C, 1)
+        elif F.ndim(B) > 2:
+            # Flatten the dim 1:~
+            B_shape = F.shape(B)
+            feat_shape = B_shape[1:]
+            tmp_B_shape = (B_shape[0], functools.reduce(operator.mul, feat_shape, 1))
+            B = F.reshape(B, tmp_B_shape)
+            C = F.spmm_max(spA, B)
+            C_shape = (F.shape(C)[0],) + feat_shape
+            C = F.reshape(C, C_shape)
+        else:
+            C = F.spmm_max(spA, B)
+        self.ret.data = C
+
+IR_REGISTRY[OpCode.SPMV_MAX] = {
+    'name' : 'SPMV_MAX',
+    'args_type' : [VarType.SPMAT, VarType.FEAT],
+    'ret_type' : VarType.FEAT,
+    'executor_cls' : SPMV_MAX_Executor,
+}
+
+def SPMV_MAX(spA, B, ret=None):
+    """Perform sparse-matrix-dense-matrix multiply symbolically.
+
+    Parameters
+    ----------
+    spA : var.Var
+        Variable for sparse matrix lambda. The lambda returns the sparse matrix
+        given a context object.
+    B : var.Var
+        Variable for the dense feature tensor.
+    ret : var.Var, optional
+        Variable for the result. If not give, a new variable will be created.
+
+    Returns
+    -------
+    var.Var
+        Variable for the result.
+    """
+    reg = IR_REGISTRY[OpCode.SPMV_MAX]
+    ret = var.new(reg['ret_type']) if ret is None else ret
+    get_current_prog().issue(reg['executor_cls'](spA, B, ret))
     return ret
 
 class SPMVExecutor(Executor):

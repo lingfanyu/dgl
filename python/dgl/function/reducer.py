@@ -40,7 +40,7 @@ class SimpleReduceFunction(ReduceFunction):
     def is_spmv_supported(self):
         """Return whether the SPMV optimization is supported."""
         # NOTE: only sum is supported right now.
-        return self._name == "sum"
+        return self._name == "sum" or self._name == "max"
 
     def __call__(self, nodes):
         return {self.out_field : self.reduce_op(nodes.mailbox[self.msg_field], 1)}
