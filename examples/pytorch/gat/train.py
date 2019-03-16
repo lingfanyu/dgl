@@ -92,11 +92,9 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # initialize graph
-    dur = []
+    start = time.time()
     for epoch in range(args.epochs):
         model.train()
-        if epoch >= 0:
-            t0 = time.time()
         # forward
         logits = model(features)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
@@ -105,24 +103,12 @@ def main(args):
         loss.backward()
         optimizer.step()
 
-        if epoch >= 0:
-            dur.append(time.time() - t0)
 
-        train_acc = accuracy(logits[train_mask], labels[train_mask])
+        print("Epoch {:05d} | Loss {:.4f}".format(epoch, loss.item()))
+    end = time.time()
 
-        if args.fastmode:
-            val_acc = accuracy(logits[val_mask], labels[val_mask])
-        else:
-            val_acc = evaluate(model, features, labels, val_mask)
-
-        print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | TrainAcc {:.4f} |"
-              " ValAcc {:.4f} | ETputs(KTEPS) {:.2f}".
-              format(epoch, dur[-1], loss.item(), train_acc,
-                     val_acc, n_edges / np.mean(dur) / 1000))
-
-    print()
     acc = evaluate(model, features, labels, test_mask)
-    print("Test Accuracy {:.4f}".format(acc))
+    print("{:.4f} s\n {:.4f}".format(end - start, acc))
 
 if __name__ == '__main__':
 
