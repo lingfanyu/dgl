@@ -34,8 +34,8 @@ class GraphAttention(nn.Module):
             self.attn_drop = nn.Dropout(attn_drop)
         else:
             self.attn_drop = lambda x : x
-        self.attn_l = nn.Parameter(torch.Tensor(size=(num_heads, out_dim, 1)))
-        self.attn_r = nn.Parameter(torch.Tensor(size=(num_heads, out_dim, 1)))
+        self.attn_l = nn.Parameter(torch.Tensor(size=(1, num_heads, out_dim)))
+        self.attn_r = nn.Parameter(torch.Tensor(size=(1, num_heads, out_dim)))
         nn.init.xavier_normal_(self.fc.weight.data, gain=1.414)
         nn.init.xavier_normal_(self.attn_l.data, gain=1.414)
         nn.init.xavier_normal_(self.attn_r.data, gain=1.414)
@@ -53,26 +53,30 @@ class GraphAttention(nn.Module):
         # prepare
         h = self.feat_drop(inputs)  # NxD
         ft = self.fc(h).reshape((h.shape[0], self.num_heads, -1))  # NxHxD'
-        head_ft = ft.transpose(0, 1)  # HxNxD'
-        a1 = torch.bmm(head_ft, self.attn_l).transpose(0, 1)  # NxHx1
-        a2 = torch.bmm(head_ft, self.attn_r).transpose(0, 1)  # NxHx1
+        a1 = (ft * self.attn_l).sum(dim=-1).unsqueeze(-1) # N x H x 1
+        a2 = (ft * self.attn_r).sum(dim=-1).unsqueeze(-1) # N x H x 1
         self.g.ndata.update({'ft' : ft, 'a1' : a1, 'a2' : a2})
+
         # 1. compute edge attention
         self.g.apply_edges(self.edge_attention)
+
         # 2. compute softmax in two parts: exp(x - max(x)) and sum(exp(x - max(x)))
         self.edge_softmax()
-        # 2. compute the aggregated node features scaled by the dropped,
+
+        # 3. compute the aggregated node features scaled by the dropped,
         # unnormalized attention values.
         self.g.update_all(fn.src_mul_edge('ft', 'a_drop', 'ft'), fn.sum('ft', 'ft'))
-        # 3. apply normalizer
+
+        # 4. apply normalizer
         ret = self.g.ndata['ft'] / self.g.ndata['z']  # NxHxD'
-        # 4. residual
+        # 5. residual
         if self.residual:
             if self.res_fc is not None:
                 resval = self.res_fc(h).reshape((h.shape[0], self.num_heads, -1))  # NxHxD'
             else:
                 resval = torch.unsqueeze(h, 1)  # Nx1xD'
             ret = resval + ret
+
         return ret
 
     def edge_attention(self, edges):
@@ -111,6 +115,7 @@ class GAT(nn.Module):
         # hidden layers
         for l in range(1, num_layers):
             # due to multi-head, the in_dim = num_hidden * num_heads
+            raise RuntimeError
             self.gat_layers.append(GraphAttention(
                 g, num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, alpha, residual))
@@ -127,3 +132,4 @@ class GAT(nn.Module):
         # output projection
         logits = self.gat_layers[-1](h).mean(1)
         return logits
+        #return h

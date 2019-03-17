@@ -6,8 +6,36 @@ from torch import nn
 from ... import function as fn
 from ...utils import get_ndata_name
 
-__all__ = ['EdgeSoftmax']
+from torch_scatter import scatter_max
 
+__all__ = ['EdgeSoftmax']
+import time
+
+class EdgeSoftmax(object):
+    def __init__(self, *args):
+        pass
+
+    def __call__(self, logits, graph):
+        shape = logits.shape
+        num_nodes = graph.number_of_nodes()
+        num_edges = shape[0]
+        tmp_shape = shape[1:]
+        logits = logits.view(num_edges, -1)
+        adj = graph._graph.adjacency_matrix(False, logits.device)[0]
+        dst, src = adj._indices()
+        index = dst.view(num_edges, 1).expand(num_edges, logits.shape[1])
+        fill_value = -1e38
+        out = logits.new_full((num_nodes, logits.shape[1]), fill_value)
+        norm = scatter_max(logits, index, dim=0, out=out)[0]
+        logits = logits - norm.index_select(0, dst)
+        logits = logits.exp()
+        out = logits.new_full((num_nodes, logits.shape[1]), 0)
+        norm = out.scatter_add(0, index, logits)
+        return logits.view((num_edges,) + tmp_shape), norm.view((num_nodes,) + tmp_shape)
+
+
+
+'''
 class EdgeSoftmax(nn.Module):
     r"""Apply softmax over signals of incoming edges.
 
@@ -78,16 +106,27 @@ class EdgeSoftmax(nn.Module):
         graph.edata[self._logits_name] = logits
 
         # compute the softmax
+        th.cuda.synchronize()
+        t1 = time.time()
         graph.update_all(fn.copy_edge(self._logits_name, self._logits_name),
                          fn.max(self._logits_name, self._max_logits_name))
+        th.cuda.synchronize()
+        t2 = time.time()
         # minus the max and exp
         graph.apply_edges(
             lambda edges: {self._logits_name : th.exp(edges.data[self._logits_name] -
                                                       edges.dst[self._max_logits_name])})
+        th.cuda.synchronize()
+        t3 = time.time()
+        graph.ndata.pop(self._max_logits_name)
         # compute normalizer
         graph.update_all(fn.copy_edge(self._logits_name, self._logits_name),
                          fn.sum(self._logits_name, self._normalizer_name))
+        th.cuda.synchronize()
+        t4 = time.time()
+        print("In softmax {:.4f} {:.4f} {:.4f}".format(t2 - t1, t3 - t2, t4 - t3))
         return graph.edata.pop(self._logits_name), graph.ndata.pop(self._normalizer_name)
 
     def __repr__(self):
         return 'EdgeSoftmax()'
+'''
