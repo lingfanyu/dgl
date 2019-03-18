@@ -2,7 +2,10 @@ from torch.utils.cpp_extension import load
 import os
 from torch.autograd import Function
 
-path = os.path.dirname(os.path.abspath(__file__))
+dgl_path = os.environ.get("DGL_PATH", "")
+if not dgl_path:
+    raise RuntimeError("Must set environment variable DGL_PATH")
+path = os.path.join(dgl_path, "python/dgl/backend/pytorch")
 sources=["graph_kernel.cu", "graph_kernel.cpp"]
 sources=[os.path.join(path, f) for f in sources]
 graph_kernel = load(name="graph_kernel", sources=sources)

@@ -115,7 +115,6 @@ class GAT(nn.Module):
         # hidden layers
         for l in range(1, num_layers):
             # due to multi-head, the in_dim = num_hidden * num_heads
-            raise RuntimeError
             self.gat_layers.append(GraphAttention(
                 g, num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, alpha, residual))
