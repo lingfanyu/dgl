@@ -4,6 +4,7 @@ from __future__ import absolute_import
 from collections import defaultdict
 import networkx as nx
 
+#import torch, time
 import dgl
 from .base import ALL, is_all, DGLError
 from . import backend as F
@@ -2544,11 +2545,18 @@ class DGLGraph(DGLBaseGraph):
         assert reduce_func is not None
 
         with ir.prog() as prog:
+            #torch.cuda.synchronize()
+            #t0 = time.time()
             scheduler.schedule_update_all(graph=self,
                                           message_func=message_func,
                                           reduce_func=reduce_func,
                                           apply_func=apply_node_func)
+            #torch.cuda.synchronize()
+            #t1 = time.time()
             Runtime.run(prog)
+            #torch.cuda.synchronize()
+            #t2 = time.time()
+            #print("schedule: {:.6f}, run: {:.6f}".format(t1 - t0, t2 - t1))
 
     def prop_nodes(self,
                    nodes_generator,

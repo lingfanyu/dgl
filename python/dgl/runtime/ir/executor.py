@@ -1,6 +1,7 @@
 """Module for executors."""
 # pylint: disable=invalid-name
 from __future__ import absolute_import
+#import torch, time
 
 from abc import abstractmethod
 import functools
@@ -21,6 +22,7 @@ __all__ = [
     'EdgeUDFExecutor', 'EDGE_UDF',
     'SPMVExecutor', 'SPMV',
     'SPMV_MAX_Executor', 'SPMV_MAX',
+    'SPMV_FAST_Executor', 'SPMV_FAST',
     'SPMVWithDataExecutor', 'SPMV_WITH_DATA',
     'ReadExecutor', 'READ',
     'ReadColExecutor', 'READ_COL',
@@ -51,6 +53,7 @@ class OpCode(object):
     UPDATE_DICT = 8
     NEW_DICT = 9
     SPMV_MAX = 10
+    SPMV_FAST = 11
     # mutable op (no return)
     # remember the name is suffixed with "_"
     WRITE_ = 21
@@ -504,6 +507,91 @@ def SPMV_MAX(spA, B, ret=None):
     get_current_prog().issue(reg['executor_cls'](spA, B, ret))
     return ret
 
+class SPMV_FAST_Executor(Executor):
+    """Executor for coalesced sparse-matrix-dense-matrix multiply.
+
+    Parameters
+    ----------
+    spA : var.Var
+        Variable for sparse matrix lambda. The lambda returns the sparse matrix
+        given a context object.
+    spAt: var.Var
+        Transpose of A
+    B : var.Var
+        Variable for the dense feature tensor.
+    ret : var.Var
+        Variable for the result.
+    """
+    def __init__(self, spA, spAt, B, ret):
+        self.spA = spA
+        self.spAt = spAt
+        self.B = B
+        self.ret = ret
+
+    def opcode(self):
+        return OpCode.SPMV_FAST
+
+    def arg_vars(self):
+        return [self.spA, self.spAt, self.B]
+
+    def ret_var(self):
+        return self.ret
+
+    def run(self):
+        spA_ctx_fn = self.spA.data
+        spAt_ctx_fn = self.spAt.data
+        B = self.B.data
+        ctx = F.context(B)
+        spA = spA_ctx_fn(ctx)
+        spAt = spAt_ctx_fn(ctx)
+        if F.ndim(B) == 1:
+            # B is a vector, append a (1,) dim at the end
+            B = F.unsqueeze(B, 1)
+            C = F.spmm_fast(spA, spAt, B)
+            C = F.squeeze(C, 1)
+        elif F.ndim(B) > 2:
+            # Flatten the dim 1:~
+            B_shape = F.shape(B)
+            feat_shape = B_shape[1:]
+            tmp_B_shape = (B_shape[0], functools.reduce(operator.mul, feat_shape, 1))
+            B = F.reshape(B, tmp_B_shape)
+            C = F.spmm_fast(spA, spAt, B)
+            C_shape = (F.shape(C)[0],) + feat_shape
+            C = F.reshape(C, C_shape)
+        else:
+            C = F.spmm_fast(spA, spAt, B)
+        self.ret.data = C
+
+IR_REGISTRY[OpCode.SPMV_FAST] = {
+    'name' : 'SPMV_FAST',
+    'args_type' : [VarType.SPMAT, VarType.SPMAT, VarType.FEAT],
+    'ret_type' : VarType.FEAT,
+    'executor_cls' : SPMV_FAST_Executor,
+}
+
+def SPMV_FAST(spA, spAt, B, ret=None):
+    """Perform sparse-matrix-dense-matrix multiply symbolically.
+
+    Parameters
+    ----------
+    spA : var.Var
+        Variable for sparse matrix lambda. The lambda returns the sparse matrix
+        given a context object.
+    B : var.Var
+        Variable for the dense feature tensor.
+    ret : var.Var, optional
+        Variable for the result. If not give, a new variable will be created.
+
+    Returns
+    -------
+    var.Var
+        Variable for the result.
+    """
+    reg = IR_REGISTRY[OpCode.SPMV_FAST]
+    ret = var.new(reg['ret_type']) if ret is None else ret
+    get_current_prog().issue(reg['executor_cls'](spA, spAt, B, ret))
+    return ret
+
 class SPMVExecutor(Executor):
     """Executor for sparse-matrix-dense-matrix multiply.
 
@@ -642,8 +730,13 @@ class SPMVWithDataExecutor(Executor):
             C = F.reshape(C, C_shape)
         else:
             assert(ndim_B == ndim_A + 1)
+            #torch.cuda.synchronize()
+            #t1 = time.time()
             C = F.spmm_data(indptr, eid, indices, indptr_t, eid_t, indices_t,
                             A_data, B)
+            #torch.cuda.synchronize()
+            #t2 = time.time()
+            #print("======" * 10, "{:.6f}".format(t2 - t1))
         self.ret.data = C
 
 IR_REGISTRY[OpCode.SPMV_WITH_DATA] = {

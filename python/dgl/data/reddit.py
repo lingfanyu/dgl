@@ -7,6 +7,17 @@ import os, sys
 from ..graph_index import create_graph_index
 from .utils import download, extract_archive, get_download_dir, _get_dgl_url
 
+def sample(coo_adj, p):
+    data = coo_adj.data
+    row = coo_adj.row
+    col = coo_adj.col
+    ne = len(data)
+    index = np.random.choice(np.arange(ne), int(ne * p), replace=False)
+    data = data[index]
+    row = row[index]
+    col = col[index]
+    print("{} edges sampled".format(len(index)))
+    return sp.coo_matrix((data, (row, col)), shape=coo_adj.shape)
 
 class RedditDataset(object):
     def __init__(self, self_loop=False):
@@ -19,7 +30,16 @@ class RedditDataset(object):
         extract_dir = os.path.join(download_dir, "reddit{}".format(self_loop_str))
         extract_archive(zip_file_path, extract_dir)
         # graph
-        coo_adj = sp.load_npz(os.path.join(extract_dir, "reddit{}_graph.npz".format(self_loop_str)))
+        sampled_graph = os.path.join(download_dir, "reddit_sampled.npz")
+        print(sampled_graph)
+        if os.path.exists(sampled_graph):
+            print("loading sampled graph")
+            coo_adj = sp.load_npz(sampled_graph)
+        else:
+            coo_adj = sp.load_npz(os.path.join(extract_dir, "reddit{}_graph.npz".format(self_loop_str)))
+            print("sampling")
+            coo_adj = sample(coo_adj, 0.2)
+            sp.save_npz(sampled_graph, coo_adj)
         self.graph = create_graph_index(coo_adj, readonly=True)
         # features and labels
         reddit_data = np.load(os.path.join(extract_dir, "reddit_data.npz"))

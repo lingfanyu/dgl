@@ -70,6 +70,8 @@ def main(args):
     n_edges = g.number_of_edges()
     # add self loop
     g.add_edges(g.nodes(), g.nodes())
+    g.adjacency_matrix(False, features.device)
+    g.adjacency_matrix(True, features.device)
     # create model
     heads = ([args.num_heads] * args.num_layers) + [args.num_out_heads]
     model = GAT(g,

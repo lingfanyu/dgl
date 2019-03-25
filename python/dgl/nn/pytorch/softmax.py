@@ -9,7 +9,7 @@ from ...utils import get_ndata_name
 from torch_scatter import scatter_max
 
 __all__ = ['EdgeSoftmax']
-import time
+#import time
 
 class EdgeSoftmax(object):
     def __init__(self, *args):
@@ -26,11 +26,16 @@ class EdgeSoftmax(object):
         index = dst.view(num_edges, 1).expand(num_edges, logits.shape[1])
         fill_value = -1e38
         out = logits.new_full((num_nodes, logits.shape[1]), fill_value)
+        out2 = logits.new_full((num_nodes, logits.shape[1]), 0)
+        #th.cuda.synchronize()
+        #t1 = time.time()
         norm = scatter_max(logits, index, dim=0, out=out)[0]
         logits = logits - norm.index_select(0, dst)
         logits = logits.exp()
-        out = logits.new_full((num_nodes, logits.shape[1]), 0)
-        norm = out.scatter_add(0, index, logits)
+        norm = out2.scatter_add(0, index, logits)
+        #th.cuda.synchronize()
+        #t2 = time.time()
+        #print("edge softmax comp: {:.6f}".format(t2 - t1))
         return logits.view((num_edges,) + tmp_shape), norm.view((num_nodes,) + tmp_shape)
 
 

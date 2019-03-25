@@ -558,6 +558,9 @@ def ones(shape, dtype, ctx):
 def spmm_max(x, y):
     pass
 
+def spmm_fast(A, At, x):
+    pass
+
 def spmm(x, y):
     """Multiply a sparse matrix with a dense matrix.
 

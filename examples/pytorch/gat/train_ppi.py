@@ -11,6 +11,7 @@ Pytorch implementation: https://github.com/Diego999/pyGAT
 """
 
 import numpy as np
+import time
 import torch
 import dgl
 import torch.nn.functional as F
@@ -21,10 +22,13 @@ from dgl.data.ppi import PPIDataset
 from torch.utils.data import DataLoader
 
 def collate(sample):
+    start = time.time()
     graphs, feats, labels =map(list, zip(*sample))
     graph = dgl.batch(graphs)
     feats = torch.from_numpy(np.concatenate(feats))
     labels = torch.from_numpy(np.concatenate(labels))
+    end = time.time()
+    print("batch graph: {:.6f}".format(end - start), end=' ,')
     return graph, feats, labels
 
 def evaluate(feats, model, subgraph, labels, loss_fcn):
@@ -55,16 +59,10 @@ def main(args):
     loss_fcn = torch.nn.BCEWithLogitsLoss()
     # create the dataset
     train_dataset = PPIDataset(mode='train')
-    print(len(train_dataset))
-    valid_dataset = PPIDataset(mode='valid')
-    print(len(valid_dataset))
-    test_dataset = PPIDataset(mode='test')
-    print(len(test_dataset))
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size,
                                   collate_fn=collate)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=batch_size, collate_fn=collate)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate)
     n_classes = train_dataset.labels.shape[1]
+    print(n_classes)
     num_feats = train_dataset.features.shape[1]
     g = train_dataset.graph
     heads = ([args.num_heads] * args.num_layers) + [args.num_out_heads]
@@ -83,56 +81,40 @@ def main(args):
     # define the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     model = model.to(device)
+    dur = []
     for epoch in range(args.epochs):
+        start = time.time()
         model.train()
         loss_list = []
         for batch, data in enumerate(train_dataloader):
+            torch.cuda.synchronize()
+            t1 = time.time()
             subgraph, feats, labels = data
             feats = feats.to(device)
             labels = labels.to(device)
             model.g = subgraph
+            print(subgraph.number_of_nodes(), subgraph.number_of_edges())
+            exit()
             for layer in model.gat_layers:
                 layer.g = subgraph
+            torch.cuda.synchronize()
+            t2 = time.time()
             logits = model(feats.float())
             loss = loss_fcn(logits, labels.float())
+            loss_list.append(loss.item())
+            t3 = time.time()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            loss_list.append(loss.item())
+            torch.cuda.synchronize()
+            t4 = time.time()
+            print("prep: {:.6f}, forward: {:.6f}, backward: {:6f}".format(t2 - t1, t3 - t2, t4 - t3))
+        end = time.time()
+        if epoch > 5:
+            dur.append(end - start)
+            print("{:.5f}".format(np.mean(dur)))
         loss_data = np.array(loss_list).mean()
         print("Epoch {:05d} | Loss: {:.4f}".format(epoch + 1, loss_data))
-        if epoch % 5 == 0:
-            score_list = []
-            val_loss_list = []
-            for batch, valid_data in enumerate(valid_dataloader):
-                subgraph, feats, labels = valid_data
-                feats = feats.to(device)
-                labels = labels.to(device)
-                score, val_loss = evaluate(feats.float(), model, subgraph, labels.float(), loss_fcn)
-                score_list.append(score)
-                val_loss_list.append(val_loss)
-            mean_score = np.array(score_list).mean()
-            mean_val_loss = np.array(val_loss_list).mean()
-            print("F1-Score: {:.4f} ".format(mean_score))
-            # early stop
-            if mean_score > best_score or best_loss > mean_val_loss:
-                if mean_score > best_score and best_loss > mean_val_loss:
-                    val_early_loss = mean_val_loss
-                    val_early_score = mean_score
-                best_score = np.max((mean_score, best_score))
-                best_loss = np.min((best_loss, mean_val_loss))
-                cur_step = 0
-            else:
-                cur_step += 1
-                if cur_step == patience:
-                    break
-    test_score_list = []
-    for batch, test_data in enumerate(test_dataloader):
-        subgraph, feats, labels = test_data
-        feats = feats.to(device)
-        labels = labels.to(device)
-        test_score_list.append(evaluate(feats, model, subgraph, labels.float(), loss_fcn)[0])
-    print("F1-Score: {:.4f}".format(np.array(test_score_list).mean()))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GAT')

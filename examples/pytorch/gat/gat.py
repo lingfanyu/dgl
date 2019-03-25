@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import dgl.function as fn
 from dgl.nn.pytorch import EdgeSoftmax
+#import time
 
 class GraphAttention(nn.Module):
     def __init__(self,
@@ -50,22 +51,32 @@ class GraphAttention(nn.Module):
                 self.res_fc = None
 
     def forward(self, inputs):
+        #torch.cuda.synchronize()
         # prepare
+        #t0 = time.time()
         h = self.feat_drop(inputs)  # NxD
         ft = self.fc(h).reshape((h.shape[0], self.num_heads, -1))  # NxHxD'
         a1 = (ft * self.attn_l).sum(dim=-1).unsqueeze(-1) # N x H x 1
         a2 = (ft * self.attn_r).sum(dim=-1).unsqueeze(-1) # N x H x 1
         self.g.ndata.update({'ft' : ft, 'a1' : a1, 'a2' : a2})
+        #torch.cuda.synchronize()
+        #t1 = time.time()
 
         # 1. compute edge attention
         self.g.apply_edges(self.edge_attention)
+        #torch.cuda.synchronize()
+        #t2 = time.time()
 
         # 2. compute softmax in two parts: exp(x - max(x)) and sum(exp(x - max(x)))
         self.edge_softmax()
+        #torch.cuda.synchronize()
+        #t3 = time.time()
 
         # 3. compute the aggregated node features scaled by the dropped,
         # unnormalized attention values.
         self.g.update_all(fn.src_mul_edge('ft', 'a_drop', 'ft'), fn.sum('ft', 'ft'))
+        #torch.cuda.synchronize()
+        #t4 = time.time()
 
         # 4. apply normalizer
         ret = self.g.ndata['ft'] / self.g.ndata['z']  # NxHxD'
@@ -76,6 +87,10 @@ class GraphAttention(nn.Module):
             else:
                 resval = torch.unsqueeze(h, 1)  # Nx1xD'
             ret = resval + ret
+        #torch.cuda.synchronize()
+        #t5 = time.time()
+        #print("node att: {:.6f}, edge att: {:.6f}, softmax: {:.6f}, att_mult_feat: {:.6f}, update: {:.6f}".
+        #      format(t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4))
 
         return ret
 

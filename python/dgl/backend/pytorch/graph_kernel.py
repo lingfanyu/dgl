@@ -1,6 +1,7 @@
 from torch.utils.cpp_extension import load
 import os
 from torch.autograd import Function
+import torch
 
 dgl_path = os.environ.get("DGL_PATH", "")
 if not dgl_path:
@@ -24,3 +25,23 @@ class VectorSPMM(Function):
         dedata, dx = graph_kernel.vector_spmm_backward(indptr, eid, indices, ptr_t, eid_t,
                                           indices_t, edata, dy, x)
         return None, None, None, None, None, None, dedata, dx
+
+class SPMM(Function):
+    @staticmethod
+    def forward(ctx, spA, spAt, x):
+        y = torch.spmm(spA, x)
+        ctx.save_for_backward(spAt)
+        return y
+
+    @staticmethod
+    def backward(ctx, dy):
+        if ctx.needs_input_grad[2]:
+            spAt = ctx.saved_tensors[0]
+            dx = torch.spmm(spAt, dy)
+        else:
+            dx = None
+            raise RuntimeError
+        return None, None, dx
+
+
+

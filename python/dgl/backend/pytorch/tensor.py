@@ -5,7 +5,7 @@ from distutils.version import LooseVersion
 import torch as th
 from torch.utils import dlpack
 
-from .graph_kernel import VectorSPMM
+from .graph_kernel import VectorSPMM, SPMM
 from torch_scatter import scatter_max
 
 TH_VERSION = LooseVersion(th.__version__)
@@ -49,7 +49,16 @@ else:
         fmt = index[0]
         if fmt != 'coo':
             raise TypeError('Pytorch backend only supports COO format. But got %s.' % fmt)
+        print("hello", data.shape)
         spmat = th.sparse_coo_tensor(index[1], data, shape)
+        th.cuda.synchronize()
+        import time
+        t1 = time.time()
+        spmat = spmat.coalesce()
+        th.cuda.synchronize()
+        t2 = time.time()
+        print(t2 - t1)
+        print(spmat._indices().shape)
         # No conversion is required.
         return spmat, None
 
@@ -139,6 +148,7 @@ def ones(shape, dtype, ctx):
     return th.ones(shape, dtype=dtype, device=ctx)
 
 def spmm(x, y):
+    raise RuntimeError
     dst, src = x._indices()
     # scatter index
     index = dst.view(-1, 1).expand(-1, y.shape[1])
@@ -149,6 +159,8 @@ def spmm(x, y):
     #       performance in backward
     feature = th.index_select(y, 0, src) * x._values().unsqueeze(-1)
     return out.scatter_add(0, index, feature)
+
+spmm_fast = SPMM.apply
 
 def spmm_max(x, y):
     dst, src = x._indices()

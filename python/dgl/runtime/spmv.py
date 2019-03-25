@@ -96,13 +96,13 @@ def gen_v2v_spmv_schedule(adj, spmv_pairs, nft, eft, eid, out, graph):
     out : var.Var
         output node features
     """
-    adjmat, shuffle_idx = adj
-    adj_var = var.SPMAT(adjmat)
+    #adjmat, shuffle_idx = adj
+    #adj_var = var.SPMAT(adjmat)
 
-    if shuffle_idx is not None:
-        raise RuntimeError
-        new_eid = utils.reorder_index(eid.data, shuffle_idx)
-        eid = var.IDX(new_eid)
+    #if shuffle_idx is not None:
+    #    raise RuntimeError
+    #    new_eid = utils.reorder_index(eid.data, shuffle_idx)
+    #    eid = var.IDX(new_eid)
     for mfn, rfn in spmv_pairs:
         if mfn.use_edge_feature:
             spA = lambda ctx: graph._graph.adjacency_matrix_csr(False, ctx)
@@ -114,7 +114,12 @@ def gen_v2v_spmv_schedule(adj, spmv_pairs, nft, eft, eid, out, graph):
             ftdst = ir.SPMV_WITH_DATA(spA, spAt, ftedge, ftsrc)
         else:
             ftsrc = ir.READ_COL(nft, var.STR(mfn.src_field))
-            ftdst = ir.SPMV(adj_var, ftsrc)
+            spA = lambda ctx: graph._graph.adjacency_matrix(False, ctx)[0]
+            spAt = lambda ctx: graph._graph.adjacency_matrix(True, ctx)[0]
+            spA = var.SPMAT(spA)
+            spAt = var.SPMAT(spAt)
+            ftdst = ir.SPMV_FAST(spA, spAt, ftsrc)
+            #ftdst = ir.SPMV(adj_var, ftsrc)
         # save for merge
         ir.WRITE_COL_(out, var.STR(rfn.out_field), ftdst)
 
