@@ -95,13 +95,14 @@ class _AvgResNet2(nn.Module):
 
     def forward(self, graph, inputs):
         x = inputs
-        for i in range(self.layer):
-            x = F.elu(x)
-            glob_avg = self.global_average(graph, x)
-            x = x.view(graph.batch_size, -1, x.shape[-1])
-            x = torch.cat([x, glob_avg.unsqueeze(1).expand_as(x)], 2)
-            x = x.view(-1, x.shape[-1])
-            x = self._modules[f'bn_fc{i}'](graph, x)
+        with graph.local_scope():
+            for i in range(self.layer):
+                x = F.elu(x)
+                graph.ndata['x'] = x
+                glob_avg = dgl.mean_nodes(graph, 'x', 'mask')
+                glob_avg = dgl.broadcast_nodes(graph, glob_avg)
+                x = torch.cat([x, glob_avg], 1)
+                x = self._modules[f'bn_fc{i}'](graph, x)
 
         return x + inputs
 
@@ -123,14 +124,13 @@ class _LapResNet2(nn.Module):
 
     def forward(self, graph, inputs):
         feat = inputs
-        for i in range(self.layer):
-            feat = F.elu(feat)
-            graph.ndata['feat'] = feat
-            print(graph.ndata['feat'].shape, graph.ndata['feat'].dtype)
-            print(graph.edata['L'].shape, graph.edata['L'].dtype)
-            graph.update_all(fn.u_mul_e('feat', 'L', 'msg'), fn.sum('msg', 'feat'))
-            feat = torch.cat([feat, graph.ndata['feat']], 1)
-            feat = self._modules[f'bn_fc{i}'](graph, feat)
+        with graph.local_scope():
+            for i in range(self.layer):
+                feat = F.elu(feat)
+                graph.ndata['feat'] = feat
+                graph.update_all(fn.u_mul_e('feat', 'L', 'msg'), fn.sum('msg', 'feat'))
+                feat = torch.cat([feat, graph.ndata['feat']], 1)
+                feat = self._modules[f'bn_fc{i}'](graph, feat)
 
         # residual
         return feat + inputs

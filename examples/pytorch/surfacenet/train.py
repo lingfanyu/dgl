@@ -189,8 +189,6 @@ def main():
             # Train
             pb = tqdm.trange(args.num_updates, ncols=0)
             for num_up in pb:
-                if num_up == 3:
-                    exit()
                 graph, curr_name = sample_batch_train(train_seq_names)
                 inputs = graph.ndata.pop('input')
                 outputs = model(graph, inputs)
