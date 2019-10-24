@@ -708,3 +708,22 @@ class WeightAndSum(nn.Module):
             h_g_sum = sum_nodes(bg, 'h', 'w')
 
         return h_g_sum
+
+
+class GraphBatchNorm(nn.Module):
+    def __init__(self):
+        super(GraphBatchNorm, self).__init__()
+        self.gamma = nn.Parameter(th.FloatTensor([1]))
+        self.beta = nn.Parameter(th.FloatTensor([0]))
+
+    def forward(self, bg, feats):
+        with bg.local_scope():
+            bg.ndata['h'] = feats
+            mean = mean_nodes(bg, 'h')
+            bcast_mean = broadcast_nodes(bg, mean)
+            bg.ndata['x'] = (feats - bcast_mean) ** 2
+            var = mean_nodes(bg, 'x')
+            std = th.sqrt(var + 1e-4)
+            bcast_std = broadcast_nodes(bg, std)
+            feats = (feats - bcast_mean) / bcast_std
+            return self.gamma * feats + self.beta

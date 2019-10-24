@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import dgl
 import dgl.function as fn
-from dgl.nn.pytorch.glob import SumPooling
+from dgl.nn.pytorch.glob import GraphBatchNorm
 
 class GraphConv1x1(nn.Module):
     def __init__(self, num_inputs, num_outputs, batch_norm=None):
@@ -11,34 +11,15 @@ class GraphConv1x1(nn.Module):
         self.num_inputs = num_inputs
         self.num_outputs = num_outputs
         self.batch_norm = batch_norm
-
-        if self.batch_norm == "pre":
-            self.bn = nn.BatchNorm1d(num_inputs)
-
-        if self.batch_norm == "post":
-            self.bn = nn.BatchNorm1d(num_outputs)
-
+        self.bn = GraphBatchNorm()
         self.fc = nn.Linear(num_inputs, num_outputs)
 
     def forward(self, graph, x):
-        batch_size = graph.batch_size
         if self.batch_norm == "pre":
-            x = x.view(batch_size, -1, self.num_inputs)
-            x = x.transpose(1, 2)
-            x = x.contiguous()
-            x = self.bn(x)
-            x = x.transpose(1, 2)
-            x = x.contiguous()
-            x = x.view(-1, self.num_inputs)
+            x = self.bn(graph, x)
         x = self.fc(x)
         if self.batch_norm == "post":
-            x = x.view(batch_size, -1, self.num_outputs)
-            x = x.transpose(1, 2)
-            x = x.contiguous()
-            x = self.bn(x)
-            x = x.transpose(1, 2)
-            x = x.contiguous()
-            x = x.view(-1, self.num_outputs)
+            x = self.bn(graph, x)
 
         return x
 

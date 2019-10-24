@@ -577,7 +577,9 @@ def _mean_on(graph, typestr, feat, weight):
             y = F.unsorted_1d_segment_sum(feat, seg_id, n_graphs, 0)
             y = y / w
         else:
-            y = F.unsorted_1d_segment_mean(feat, seg_id, n_graphs, 0)
+            y = F.unsorted_1d_segment_sum(feat, seg_id, n_graphs, 0)
+            w = F.copy_to(F.astype(F.zerocopy_from_numpy(batch_num_objs), F.dtype(y)), F.context(y))
+            y = y / F.reshape(w, (-1, 1))
         return y
     else:
         if weight is None:
