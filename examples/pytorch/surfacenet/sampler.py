@@ -19,7 +19,7 @@ def read_npz(seq_names, args):
     with open(seq_names) as fp:
         Xd, Xi = igl.eigen.MatrixXd, igl.eigen.MatrixXi
         eV, eF, eVN = Xd(), Xi(), Xd()
-        igl.readOBJ(seq_names, eV,Xd(), eVN, eF, Xi(), Xi())
+        igl.readOBJ(seq_names, eV, Xd(), eVN, eF, Xi(), Xi())
 
         new_frame = {}
         npfloat = np.float32
@@ -37,10 +37,11 @@ def read_npz(seq_names, args):
         if 'hack1' in args.additional_opt:
             hack = 1
         elif 'hack0' in args.additional_opt:
-            hack=0
+            hack = 0
 
         if 'intrinsic' in args.additional_opt:
             hack = None
+
         def hackit(Op, h):
             Op.data[np.where(np.logical_not(np.isfinite(Op.data)))[0]] = h
             Op.data[Op.data > 1e10] = h
@@ -49,16 +50,17 @@ def read_npz(seq_names, args):
 
         if args.uniform_mesh:
             V -= np.min(V, axis=0)
-            V /= np.max(V) # isotropic scaling
+            V /= np.max(V)  # isotropic scaling
 
         if L is None:
             if hack is None:
-                assert 0
-                import ipdb;ipdb.set_trace()
+                assert 0, "Use hack1"
+                import ipdb
+                ipdb.set_trace()
                 import utils.mesh as mesh
-                L = mesh.intrinsic_laplacian(V,F)
+                L = mesh.intrinsic_laplacian(V, F)
             else:
-                L = geom_utils.hacky_compute_laplacian(V,F, hack)
+                L = geom_utils.hacky_compute_laplacian(V, F, hack)
 
         if L is None:
             print("warning: {} no L".format(seq_names))
@@ -71,68 +73,77 @@ def read_npz(seq_names, args):
         input_tensors = {}
         input_tensors['V'] = V
 
-        new_frame['input'] = torch.cat([torch.from_numpy(input_tensors[t].astype(np.float32)) for t in input_tensors ], dim=1)
+        new_frame['input'] = torch.cat(
+            [torch.from_numpy(input_tensors[t].astype(np.float32))
+                for t in input_tensors], dim=1)
 
         # save data to new frame
         new_frame['V'] = V
         new_frame['F'] = F
-        new_frame['target_dist'] = torch.from_numpy(vdist).view(-1,3)
+        new_frame['target_dist'] = torch.from_numpy(vdist).view(-1, 3)
         new_frame['name'] = seq_names
         return new_frame
 
-def sample_batch(seq_names, args, is_fixed=False):
-    sample_batch.num_vertices = 0
-    sample_batch.num_faces = 0
-    sample_batch.input_features = args.input_dim
 
-    samples = []
-    sample_names = []
-
-    while len(samples) < args.batch_size:
-        new_sample = None
-        while True:
-            if is_fixed:
-                seq_choice = seq_names[sample_batch.train_id]
-                sample_batch.train_id += 1
-                if sample_batch.train_id >= len(seq_names):
-                    sample_batch.EPOCH_FLAG=True
-                    sample_batch.train_id = 0
-            else:
-                seq_choice = seq_names[sample_batch.test_id]
-                sample_batch.test_id += 1
-                if sample_batch.test_id >= len(seq_names):
-                    sample_batch.test_id = 0
-            new_sample = None
-            if type(seq_choice) is str and os.path.isfile(seq_choice):
-                new_sample = read_npz(seq_choice, args)
-            else:
-                assert args.pre_load
-                new_sample = seq_choice
-            if new_sample is not None:
-                break
-        samples.append(new_sample)
-        sample_names.append(new_sample['name'])
-        sample_batch.num_vertices = max(
-            sample_batch.num_vertices, samples[-1]['V'].shape[0])
-        sample_batch.num_faces = max(
-            sample_batch.num_faces, samples[-1]['F'].shape[0])
-
-    targets = None
-
-    mask = torch.zeros(args.batch_size, sample_batch.num_vertices, 1)
-
-    graph_batch = []
-
+def sample_batch(seq_names, args, num_batch):
     device = torch.device('cuda' if args.cuda else 'cpu')
 
-    for b, sam in enumerate(samples):
-        num_vertices, input_channel = sam['input'].shape
-        L = sam['L']
+    total_nodes = 0
+    sample_id = 0
+    nsample = 0
+    graph_batch = []
+    sample_names = []
+    batch_count = 0
+
+    if args.shuffle:
+        random.shuffle(seq_names)
+
+    while True:
+        new_sample = None
+        seq_choice = seq_names[sample_id]
+        sample_id += 1
+        if sample_id >= len(seq_names):
+            sample_id = 0
+        if isinstance(seq_choice, str) and os.path.isfile(seq_choice):
+            new_sample = read_npz(seq_choice, args)
+        else:
+            assert args.pre_load
+            new_sample = seq_choice
+        assert(new_sample is not None)
+
+        num_vertices, input_channel = new_sample['input'].shape
+
+        if args.var_size and total_nodes + num_vertices >= args.threshold:
+            if num_vertices > args.threshold:
+                print("Sample ignored"
+                      f"has {num_vertices} > {args.threshold} nodes")
+                continue
+            yield dgl.batch(graph_batch), sample_names
+            batch_count += 1
+            if batch_count == num_batch:
+                return
+            graph_batch = []
+            sample_names = []
+            nsample = 0
+            total_nodes = 0
+
+        L = new_sample['L']
         graph = dgl.DGLGraph(L, readonly=True)
         graph.edata['L'] = torch.from_numpy(L.data).to(device).view(-1, 1)
-        graph.ndata['input'] = sam['input'].to(device)
-        graph.ndata['mask'] = torch.ones(sample_batch.num_vertices, 1).to(device)
-        graph.ndata['target'] = sam['target_dist'].to(device)
+        graph.ndata['input'] = new_sample['input'].to(device)
+        graph.ndata['mask'] = torch.ones(num_vertices, 1).to(device)
+        graph.ndata['target'] = new_sample['target_dist'].to(device)
         graph_batch.append(graph)
+        sample_names.append(new_sample['name'])
+        nsample += 1
+        total_nodes += num_vertices
 
-    return dgl.batch(graph_batch), sample_names
+        if not args.var_size and nsample == args.batch_size:
+            yield dgl.batch(graph_batch), sample_names
+            batch_count += 1
+            if batch_count == args.num_updates:
+                return
+            graph_batch = []
+            sample_names = []
+            nsample = 0
+            total_nodes = 0
