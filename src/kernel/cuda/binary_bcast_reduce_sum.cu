@@ -109,20 +109,37 @@ void FallbackCallBackwardBinaryReduceBcast(
 
 }  // namespace cuda
 
+template <typename DType>
+void CallCusparse(
+    const RuntimeConfig& rtcfg,
+    const aten::CSRMatrix& csr,
+    const DType* A_data,
+    const DType* B_data,
+    DType* C_data,
+    int x_length) {
+  const int nnz = csr.indices->shape[0];
+  auto device = runtime::DeviceAPI::Get(rtcfg.ctx);
+  DType* edata = static_cast<DType*>(device->AllocWorkspace(
+        rtcfg.ctx, nnz * sizeof(DType)));
+  const int32_t* indices = static_cast<int32_t*>(csr.data->data);
+  utils::Take1D<kDLGPU>(rtcfg.ctx, edata, A_data, indices, nnz);
+  cuda::CusparseCsrmm2(rtcfg, csr, edata, B_data, C_data, x_length);
+  device->FreeWorkspace(rtcfg.ctx, edata);
+}
+
 template <>
 void CallBinaryReduceBcast<kDLGPU, 2, int32_t, float, SelectSrc, SelectEdge,
                       BinaryMul<float>, ReduceSum<kDLGPU, float>>(
     const RuntimeConfig& rtcfg,
     const CSRWrapper& graph,
     BcastGData<2, int32_t, float>* gdata) {
-  if ((gdata->rhs_shape[0] != 1 && gdata->rhs_shape[1] != 1) || 
+  if ((gdata->rhs_shape[0] != 1 && gdata->rhs_shape[1] != 1) ||
       gdata->lhs_mapping || gdata->rhs_mapping || gdata->out_mapping) {
     cuda::FallbackCallBinaryReduceBcast<float>(rtcfg, graph, gdata);
   } else {
     // cusparse use rev csr for csrmm
     auto csr = graph.GetInCSRMatrix();
-    // XXX: this is a hack because we did not reorder edges
-    cuda::CusparseCsrmm2(rtcfg, csr, gdata->rhs_data, gdata->lhs_data, 
+    CallCusparse<float>(rtcfg, csr, gdata->rhs_data, gdata->lhs_data,
         gdata->out_data, gdata->out_len);
   }
 }
@@ -133,14 +150,13 @@ void CallBinaryReduceBcast<kDLGPU, 2, int32_t, double, SelectSrc, SelectEdge,
     const RuntimeConfig& rtcfg,
     const CSRWrapper& graph,
     BcastGData<2, int32_t, double>* gdata) {
-  if ((gdata->rhs_shape[0] != 1 && gdata->rhs_shape[1] != 1) || 
+  if ((gdata->rhs_shape[0] != 1 && gdata->rhs_shape[1] != 1) ||
       gdata->lhs_mapping || gdata->rhs_mapping || gdata->out_mapping) {
     cuda::FallbackCallBinaryReduceBcast<double>(rtcfg, graph, gdata);
   } else {
     // cusparse use rev csr for csrmm
     auto csr = graph.GetInCSRMatrix();
-    // XXX: this is a hack because we did not reorder edges
-    cuda::CusparseCsrmm2(rtcfg, csr, gdata->rhs_data, gdata->lhs_data, 
+    CallCusparse<double>(rtcfg, csr, gdata->rhs_data, gdata->lhs_data,
         gdata->out_data, gdata->out_len);
   }
 }
@@ -159,8 +175,7 @@ void CallBackwardBinaryReduceBcast<kDLGPU, binary_op::kGradLhs, 2, int32_t,
     cuda::FallbackCallBackwardBinaryReduceBcast<float>(rtcfg, graph, gdata);
   } else {
     auto csr = graph.GetOutCSRMatrix();
-    // XXX: this is a hack because we did not reorder edges
-    cuda::CusparseCsrmm2(rtcfg, csr, gdata->rhs_data, gdata->grad_out_data, 
+    CallCusparse<float>(rtcfg, csr, gdata->rhs_data, gdata->grad_out_data,
         gdata->grad_lhs_data, gdata->out_len);
   }
 }
@@ -177,8 +192,7 @@ void CallBackwardBinaryReduceBcast<kDLGPU, binary_op::kGradLhs, 2, int32_t,
     cuda::FallbackCallBackwardBinaryReduceBcast<double>(rtcfg, graph, gdata);
   } else {
     auto csr = graph.GetOutCSRMatrix();
-    // XXX: this is a hack because we did not reorder edges
-    cuda::CusparseCsrmm2(rtcfg, csr, gdata->rhs_data, gdata->grad_out_data, 
+    CallCusparse<double>(rtcfg, csr, gdata->rhs_data, gdata->grad_out_data,
         gdata->grad_lhs_data, gdata->out_len);
   }
 }
