@@ -222,7 +222,11 @@ def main():
             nbatch = args.num_updates
             pb = tqdm.tqdm(sample_batch(train_seq_names, args, nbatch),
                            total=nbatch, ncols=80)
+            torch.cuda.synchronize()
+            t0 = time.time()
             for num_up, (graph, curr_name) in enumerate(pb):
+                torch.cuda.synchronize()
+                t1 = time.time()
                 inputs = graph.ndata.pop('input')
                 outputs = model(graph, inputs)
                 if (torch.isnan(outputs.detach())).any():
@@ -232,6 +236,8 @@ def main():
                 mask = graph.ndata['mask']
                 loss = loss_fun(outputs, mask, targets)
                 mad += mean_angle_deviation(outputs, mask, targets).item()
+                torch.cuda.synchronize()
+                t2 = time.time()
 
                 early_optimizer.zero_grad()
                 loss.backward()
@@ -241,6 +247,10 @@ def main():
                     assert False, f'NANNNN {curr_name[0]} LOSS'
                 pb.set_postfix(loss=loss_value / (num_up + 1),
                                mad=mad / (num_up + 1))
+                torch.cuda.synchronize()
+                t3 = time.time()
+                print("{:.3f} {:.3f} {:.3f}".format((t1 -t0) * 1e3, (t2-t1)*1e3, (t3-t2)*1e3))
+                t0 = t3
 
             custom_logging("Train {}, loss {}, mad {}, time {}"
                            .format(epoch, loss_value / args.num_updates,

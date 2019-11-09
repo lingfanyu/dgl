@@ -818,7 +818,7 @@ def ones(shape, dtype, ctx):
     pass
 
 def uniform(shape, dtype, ctx, low, high):
-    """Crear a tensor with random value in an uniform 
+    """Crear a tensor with random value in an uniform
     distribution between low (inclusive) and high (exclusive).
 
     Parameters
@@ -1190,7 +1190,7 @@ def one_hot(t, num_classes=-1):
         Total number of classes. If set to -1, the number
         of classes will be inferred as one greater than the largest class
         value in the input tensor.
-    
+
     Returns
     -------
     Tensor
@@ -1269,6 +1269,9 @@ def copy_reduce(reducer, graph, target, in_data, out_size, in_map, out_map):
     Tensor
         The result.
     """
+    pass
+
+def graph_segsum(data, graph, seg_id, out_size):
     pass
 
 ###############################################################################

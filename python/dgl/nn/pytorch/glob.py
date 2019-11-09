@@ -727,3 +727,49 @@ class GraphBatchNorm(nn.Module):
             bcast_std = broadcast_nodes(bg, std)
             feats = (feats - bcast_mean) / bcast_std
             return self.gamma * feats + self.beta
+
+"""
+class GraphBatchNormOp(th.autograd.Function):
+    @staticmethod
+    def forward(ctx, bg, feats):
+        n_graphs = bg.batch_size
+        dev = F.context(feats)
+        seg_id = bg.get_node_seg_id(dev)
+        buf = feats.new_empty((n_graphs,) + feats.shape[1:])
+        seg_id_expanded = seg_id.view((-1,) + (1,) * (feats.dim() - 1)).expand_as(feats)
+        buf = buf.scatter_add_(0, seg_id_expanded, feats)
+        node_count = F.copy_to(F.astype(F.zerocopy_from_numpy(bg.batch_num_nodes), F.dtype(feats)).view(-1, 1), dev)
+        mean = buf / node_count
+        bcast_mean = mean.index_select(0, seg_id)
+        feats_shift = feats - bcast_mean
+        buf = buf.fill_(0).scatter_add_(0, seg_id_expanded, feats_shift ** 2)
+        var = buf / node_count + 1e-4
+        std = th.sqrt(var)
+        bcast_std_inv = 1.0 / std.index_select(0, seg_id)
+        ctx.save_for_backward(buf, seg_id, seg_id_expanded, feats_shift, node_count, std, bcast_std_inv)
+        return feats_shift * bcast_std_inv
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        buf, seg_id, seg_id_expanded, feats_shift, node_count, std, bcast_std_inv = ctx.saved_tensors
+        grad_var = buf.fill_(0).scatter_add_(0, seg_id_expanded, grad_out * feats_shift) * std ** (-3) * (-0.5)
+        grad_mean = buf.fill_(0).scatter_add_(0, seg_id_expanded, grad_out * bcast_std_inv) * (-1)
+        grad_mean = grad_mean + buf.fill_(0).scatter_add_(0, seg_id_expanded, feats_shift) * (-2) / node_count * grad_var
+        grad_feats = grad_out * bcast_std_inv + (grad_var / node_count).index_select(0, seg_id) * 2 * feats_shift + \
+            (grad_mean / node_count).index_select(0, seg_id)
+        return None, grad_feats
+
+graph_batch_norm = GraphBatchNormOp.apply
+
+class GraphBatchNormFast(nn.Module):
+    def __init__(self):
+        super(GraphBatchNormFast, self).__init__()
+        self.gamma = nn.Parameter(th.FloatTensor([1]))
+        self.beta = nn.Parameter(th.FloatTensor([0]))
+
+    def forward(self, bg, feats):
+        if isinstance(bg, BatchedDGLGraph):
+            return self.gamma * graph_batch_norm(bg, feats) + self.beta
+        else:
+            assert(0)
+"""

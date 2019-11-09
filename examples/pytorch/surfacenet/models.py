@@ -68,12 +68,6 @@ class _AvgResNet2(nn.Module):
             bn_fc = GraphConv1x1(2 * num_outputs, num_outputs, batch_norm=bnmode)
             self.add_module(f'bn_fc{i}', bn_fc)
 
-    def global_average(self, graph, feat):
-        mask = graph.ndata['mask']
-        global_sum = SumPooling()(graph, feat * mask)
-        global_norm = SumPooling()(graph, mask)
-        return global_sum / global_norm
-
     def forward(self, graph, inputs):
         x = inputs
         with graph.local_scope():
