@@ -63,6 +63,7 @@ parser.add_argument('--threshold', type=int, default=None,
                     help='Threshold for adaptive batch size')
 parser.add_argument('--shuffle', action='store_true',
                     help='shuffle dataset')
+parser.add_argument('--use-schedule', type=str, default=None)
 
 parser.add_argument(
     '--additional-opt',
@@ -82,7 +83,7 @@ parser.set_defaults(uniform_mesh=True)
 
 def main():
     args = parser.parse_args()
-    if args.var_size:
+    if args.var_size and args.use_schedule is None:
         assert(args.threshold is not None)
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.var_size:
@@ -182,6 +183,11 @@ def main():
     if not args.var_size and not args.shuffle:
         train_seq_names = train_seq_names[:args.batch_size * args.num_updates]
 
+    if args.use_schedule:
+        schedule = sampler.load_schedule(args.use_schedule)
+        schedule = schedule[:args.num_updates]
+        train_seq_names = train_seq_names[:schedule[-1][-1] + 1]
+
     if args.pre_load:
         print("start to preload")
         # pickle-able for imap
@@ -190,6 +196,7 @@ def main():
         torch.multiprocessing.set_sharing_strategy('file_system')
         if not args.only_forward_test:
             if True:
+                #train_seq_names = train_seq_names[:16]
                 train_seq_names = [readnpz(t)
                                    for t in tqdm.tqdm(train_seq_names,
                                                       ncols=0)]
@@ -206,6 +213,8 @@ def main():
             test_seq_names = [readnpz(t)
                               for t in tqdm.tqdm(test_seq_names, ncols=0)]
             test_seq_names = [t for t in test_seq_names if t is not None]
+        else:
+            test_seq_names = []
         print('Train size:', len(train_seq_names),
               ' Test size:', len(test_seq_names))
         print("finish preload")
@@ -219,14 +228,18 @@ def main():
             loss_value = 0
             mad = 0
             # Train
-            nbatch = args.num_updates
-            pb = tqdm.tqdm(sample_batch(train_seq_names, args, nbatch),
-                           total=nbatch, ncols=80)
-            torch.cuda.synchronize()
-            t0 = time.time()
+            if args.use_schedule is None:
+                nbatch = args.num_updates
+                loader = sample_batch(train_seq_names, args, nbatch)
+            else:
+                nbatch = len(schedule)
+                loader = sampler.produce_batch_from_schedule(schedule, train_seq_names)
+            pb = tqdm.tqdm(loader, total=nbatch, ncols=80)
+            #torch.cuda.synchronize()
+            #t0 = time.time()
             for num_up, (graph, curr_name) in enumerate(pb):
-                torch.cuda.synchronize()
-                t1 = time.time()
+                #torch.cuda.synchronize()
+                #t1 = time.time()
                 inputs = graph.ndata.pop('input')
                 outputs = model(graph, inputs)
                 if (torch.isnan(outputs.detach())).any():
@@ -236,8 +249,8 @@ def main():
                 mask = graph.ndata['mask']
                 loss = loss_fun(outputs, mask, targets)
                 mad += mean_angle_deviation(outputs, mask, targets).item()
-                torch.cuda.synchronize()
-                t2 = time.time()
+                #torch.cuda.synchronize()
+                #t2 = time.time()
 
                 early_optimizer.zero_grad()
                 loss.backward()
@@ -247,10 +260,10 @@ def main():
                     assert False, f'NANNNN {curr_name[0]} LOSS'
                 pb.set_postfix(loss=loss_value / (num_up + 1),
                                mad=mad / (num_up + 1))
-                torch.cuda.synchronize()
-                t3 = time.time()
-                print("{:.3f} {:.3f} {:.3f}".format((t1 -t0) * 1e3, (t2-t1)*1e3, (t3-t2)*1e3))
-                t0 = t3
+                #torch.cuda.synchronize()
+                #t3 = time.time()
+                #print(graph.batch_size, graph.number_of_nodes(), t3 - t0)
+                #t0 = t3
 
             custom_logging("Train {}, loss {}, mad {}, time {}"
                            .format(epoch, loss_value / args.num_updates,

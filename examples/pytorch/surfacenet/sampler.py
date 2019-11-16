@@ -84,6 +84,41 @@ def read_npz(seq_names, args):
         new_frame['name'] = seq_names
         return new_frame
 
+def load_schedule(filename):
+    with open(filename) as f:
+        return [list(map(int, line.strip().split(','))) for line in f]
+
+def generate_batch(samples, batch_size, max_vertices, in_dim, out_dim, device):
+    graph_batch = []
+    sample_names = []
+    for new_sample in samples:
+        num_vertices, in_dim = new_sample["input"].shape
+        L = new_sample['L']
+        graph = dgl.DGLGraph(L, readonly=True)
+        graph.edata['L'] = torch.from_numpy(L.data).to(device).view(-1, 1)
+        graph.ndata['input'] = new_sample['input'].to(device)
+        graph.ndata['mask'] = torch.ones(num_vertices, 1).to(device)
+        graph.ndata['target'] = new_sample['target_dist'].to(device)
+        graph_batch.append(graph)
+        sample_names.append(new_sample['name'])
+    return dgl.batch(graph_batch), sample_names
+
+def produce_batch_from_schedule(schedule, all_samples):
+    device = torch.device('cuda')
+    for batch in schedule:
+        max_vertices = 0
+        samples = []
+        in_dim = 0
+        out_dim = 0
+        sample_names = []
+        for sample_id in batch:
+            sam = all_samples[sample_id]
+            samples.append(sam)
+            num_vertices, in_dim = sam["input"].shape
+            max_vertices = max(max_vertices, num_vertices)
+            out_dim = sam["target_dist"].size(1)
+        yield generate_batch(samples, len(samples), max_vertices,
+                             in_dim, out_dim, device)
 
 def sample_batch(seq_names, args, num_batch):
     device = torch.device('cuda' if args.cuda else 'cpu')

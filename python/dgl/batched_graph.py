@@ -596,14 +596,17 @@ def _mean_on(graph, typestr, feat, weight):
         n_graphs = graph.batch_size
         ctx = F.context(feat)
         seg_id = graph.get_node_seg_id(ctx)
-        gidx = graph.get_segsum_adj()
-        adj = gidx.get_unitgraph(0, utils.to_dgl_context(ctx))
+        #gidx = graph.get_segsum_adj()
+        #adj = gidx.get_unitgraph(0, utils.to_dgl_context(ctx))
         if weight is not None:
-            w = F.graph_segsum(weight, adj, seg_id, n_graphs)
-            y = F.graph_segsum(feat, adj, seg_id, n_graphs)
+            #w = F.graph_segsum(weight, adj, seg_id, n_graphs)
+            #y = F.graph_segsum(feat, adj, seg_id, n_graphs)
+            w = F.unsorted_1d_segment_sum(weight, seg_id, n_graphs, 0)
+            y = F.unsorted_1d_segment_sum(feat, seg_id, n_graphs, 0)
             y = y / w
         else:
-            y = F.graph_segsum(feat, adj, seg_id, n_graphs)
+            #y = F.graph_segsum(feat, adj, seg_id, n_graphs)
+            y = F.unsorted_1d_segment_sum(feat, seg_id, n_graphs, 0)
             w = graph.get_batch_num_nodes(ctx, F.dtype(y))
             y = y / F.reshape(w, (-1, 1))
         return y
