@@ -398,26 +398,6 @@ def test_simple_graph():
     eset = set(zip(list(F.asnumpy(src)), list(F.asnumpy(dst))))
     assert eset == set(elist)
 
-@unittest.skipIf(F._default_context_str == 'gpu', reason="GPU not implemented")
-def _test_bidirected_graph():
-    def _test(in_readonly, out_readonly):
-        elist = [(0, 0), (0, 1), (1, 0),
-                (1, 1), (2, 1), (2, 2)]
-        num_edges = 7
-        g = dgl.DGLGraph(elist, readonly=in_readonly)
-        elist.append((1, 2))
-        elist = set(elist)
-        big = dgl.to_bidirected_stale(g, out_readonly)
-        assert big.number_of_edges() == num_edges
-        src, dst = big.edges()
-        eset = set(zip(list(F.asnumpy(src)), list(F.asnumpy(dst))))
-        assert eset == set(elist)
-
-    _test(True, True)
-    _test(True, False)
-    _test(False, True)
-    _test(False, False)
-
 
 @unittest.skipIf(F._default_context_str == 'gpu', reason="GPU not implemented")
 def test_khop_graph():

@@ -56,8 +56,6 @@ include_directories("include")
 include_directories("third_party/dlpack/include")
 include_directories("third_party/METIS/include/")
 include_directories("third_party/dmlc-core/include")
-include_directories("third_party/minigun/minigun")
-include_directories("third_party/minigun/third_party/moderngpu/src")
 include_directories("third_party/phmap/")
 include_directories("third_party/xbyak/")
 
@@ -117,8 +115,6 @@ else(MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DIDXTYPEWIDTH=64 -DREALTYPEWIDTH=32")
 endif(MSVC)
 
-# configure minigun
-add_definitions(-DENABLE_PARTIAL_FRONTIER=0)  # disable minigun partial frontier compile
 # Source file lists
 file(GLOB DGL_SRC
   src/*.cc
@@ -126,8 +122,6 @@ file(GLOB DGL_SRC
   src/array/cpu/*.cc
   src/random/*.cc
   src/random/cpu/*.cc
-  src/kernel/*.cc
-  src/kernel/cpu/*.cc
   src/runtime/*.cc
   src/geometry/*.cc
   src/geometry/cpu/*.cc
@@ -137,7 +131,6 @@ file(GLOB DGL_SRC
 file(GLOB_RECURSE DGL_SRC_1
   src/api/*.cc
   src/graph/*.cc
-  src/scheduler/*.cc
   src/rpc/*.cc
 )
 

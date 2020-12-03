@@ -11,7 +11,6 @@
 #include <dgl/packed_func_ext.h>
 #include <dgl/random.h>
 #include <dgl/runtime/container.h>
-#include <dgl/sampler.h>
 #include <dmlc/io.h>
 #include <dmlc/memory_io.h>
 
