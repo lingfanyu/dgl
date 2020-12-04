@@ -27,7 +27,7 @@ if [ $2 == "gpu" ]
 then
   export CUDA_VISIBLE_DEVICES=0
 else
-  export CUDA_VISIBLE_DEVICES=-1
+  export CUDA_VISIBLE_DEVICES=
 fi
 
 conda activate ${DGLBACKEND}-ci
